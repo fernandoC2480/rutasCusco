@@ -54,10 +54,6 @@ class _MapPageState extends State<MapPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Mapa de Cusco'),
-        backgroundColor: const Color(0xFF4A148C),
-      ),
       body: Stack(
         children: [
           GoogleMap(
