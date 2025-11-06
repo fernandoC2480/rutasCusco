@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'routes_page.dart';
+import 'routes_page.dart'; // 🔹 Ahora contiene RoutesSearchPage
 import 'schedule_page.dart';
 import 'info_page.dart';
-import 'search_page.dart'; // 🔹 Nueva página que reemplaza MapPage
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -15,8 +14,7 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = const [
-    SearchPage(),
-    RoutesPage(),
+    RoutesSearchPage(), // 🔹 Página combinada de búsqueda y rutas
     SchedulePage(),
     InfoPage(),
   ];
@@ -40,7 +38,6 @@ class _HomeScreenState extends State<HomeScreen> {
       bottomNavigationBar: BottomNavigationBar(
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-          BottomNavigationBarItem(icon: Icon(Icons.directions_bus), label: 'Rutas'),
           BottomNavigationBarItem(icon: Icon(Icons.schedule), label: 'Horario'),
           BottomNavigationBarItem(icon: Icon(Icons.info), label: 'Info'),
         ],

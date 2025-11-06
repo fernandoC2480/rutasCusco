@@ -3,7 +3,7 @@ import 'data/database_helper.dart';
 import 'data/json_loader.dart';
 import 'pages/home_screen.dart';
 import 'pages/routes_page.dart';
-import 'pages/map_page.dart';
+import 'pages/maproute_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,7 +15,6 @@ Future<void> main() async {
     await loader.importAllFromJson([
       'assets/json/ruta_1.json',
       'assets/json/ruta_2.json',
-      // ...
     ]);
   }
 
@@ -29,10 +28,20 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Rutas Cusco',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primaryColor: const Color(0xFF4A148C),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A148C)),
+      ),
       initialRoute: '/',
       routes: {
         '/': (context) => const HomeScreen(),
-        '/routes': (context) => const RoutesPage(),
+        '/map': (context) => const MapPage(
+          routeName: '',
+          routeNumber: '',
+          schedule: '',
+          polyline: '[]',
+        ),
       },
     );
   }
