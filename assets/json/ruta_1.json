@@ -1,0 +1,16 @@
+{
+  "id": 1,
+  "name": "Santiago - Centro",
+  "number": "R1",
+  "schedule": "6:00 - 22:00",
+  "description": "Ruta desde el distrito de Santiago hacia el Centro de Cusco.",
+  "points": [
+    { "lat": -13.526, "lng": -71.944 },
+    { "lat": -13.527, "lng": -71.945 },
+    { "lat": -13.528, "lng": -71.946 }
+  ],
+  "stops": [
+    { "name": "Paradero Santiago", "lat": -13.5265, "lng": -71.945 },
+    { "name": "Paradero Centro", "lat": -13.530, "lng": -71.949 }
+  ]
+}
