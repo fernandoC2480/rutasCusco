@@ -14,7 +14,7 @@ Future<void> main() async {
     final loader = JsonLoader();
     await loader.importAllFromJson([
       'assets/json/ruta_1.json',
-      'assets/json/ruta_2.json',
+      'assets/json/ruta_patron_de_san_jeronimo.json',
     ]);
   }
 
