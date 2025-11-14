@@ -37,11 +37,18 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
         final jsonStr = await rootBundle.loadString(path);
         final data = json.decode(jsonStr);
 
+        // --- ¡EL CAMBIO CRÍTICO ESTÁ AQUÍ! ---
+        // Tu JSON tiene la clave 'points', no 'polyline'.
+        // Asegúrate de que 'points' sea una List<dynamic> y la conviertes a JSON String.
+        final List<dynamic> points = data['points'] ?? []; // Usa ?? [] para asegurar que siempre sea una lista, aunque vacía.
+        final String polylineJsonString = json.encode(points);
+        // --- FIN DEL CAMBIO ---
+
         routes.add({
           'name': data['name'],
           'number': data['number'],
           'schedule': data['schedule'],
-          'polyline': json.encode(data['polyline']),
+          'polyline': polylineJsonString, // Ahora pasa la cadena JSON correcta
         });
       }
 
@@ -50,8 +57,10 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
         filteredRoutes = routes;
         _isLoading = false;
       });
-    } catch (e) {
-      debugPrint('Error cargando rutas: $e');
+      debugPrint('Rutas cargadas desde JSON: ${allRoutes.length}');
+    } catch (e, stacktrace) {
+      debugPrint('Error cargando rutas desde JSON: $e');
+      debugPrint('StackTrace: $stacktrace');
       setState(() => _isLoading = false);
     }
   }
@@ -68,6 +77,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
   }
 
   void _openRoute(Map<String, dynamic> route) {
+    // Aquí route['polyline'] ya es una String JSON, no necesitas volver a codificarla.
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -75,7 +85,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
           routeName: route['name'],
           routeNumber: route['number'],
           schedule: route['schedule'],
-          polyline: route['polyline'],
+          polyline: route['polyline'], // Esto ya es la cadena JSON correcta
         ),
       ),
     );
@@ -91,6 +101,11 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
     }
 
     return Scaffold(
+      appBar: AppBar(
+        title: const Text('Buscar Rutas'),
+        backgroundColor: const Color(0xFF4A148C),
+        foregroundColor: Colors.white,
+      ),
       body: Column(
         children: [
           // 🔹 Barra de búsqueda
@@ -127,12 +142,17 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
               itemCount: filteredRoutes.length,
               itemBuilder: (_, i) {
                 final r = filteredRoutes[i];
-                return ListTile(
-                  leading: const Icon(Icons.directions_bus, color: Color(0xFF4A148C)),
-                  title: Text(r['name']),
-                  subtitle: Text('Ruta: ${r['number']} - ${r['schedule']}'),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 18),
-                  onTap: () => _openRoute(r),
+                return Card( // Usar Card para un mejor aspecto
+                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  elevation: 2,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  child: ListTile(
+                    leading: const Icon(Icons.directions_bus, color: Color(0xFF4A148C)),
+                    title: Text('${r['number']} - ${r['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                    subtitle: Text('Horario: ${r['schedule']}'),
+                    trailing: const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey),
+                    onTap: () => _openRoute(r),
+                  ),
                 );
               },
             ),
