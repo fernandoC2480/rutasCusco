@@ -43,8 +43,7 @@ class _MapPageState extends State<MapPage> {
 
     if (widget.polyline.isEmpty || widget.polyline == "[]") {
       debugPrint("Error: La cadena de polilínea está vacía o es un array vacío. No se dibujará la ruta.");
-      // Considera mostrar un mensaje al usuario aquí.
-      return; // Salir si no hay datos de polilínea
+      return;
     }
 
     try {
@@ -96,8 +95,6 @@ class _MapPageState extends State<MapPage> {
         });
         debugPrint("Polilínea y marcadores añadidos al estado.");
 
-        // Si mapController ya está disponible (ej. si el mapa se renderiza antes que _loadBusRoute termine)
-        // podríamos animar aquí, pero es más robusto hacerlo en onMapCreated.
         if (mapController != null) {
           mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
         }
@@ -108,7 +105,6 @@ class _MapPageState extends State<MapPage> {
     } catch (e, stacktrace) {
       debugPrint("¡¡¡ERROR CRÍTICO!!! Fallo al cargar ruta o decodificar JSON: $e");
       debugPrint("StackTrace: $stacktrace");
-      // Considera mostrar un mensaje de error al usuario.
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Error al cargar la ruta: $e')),
