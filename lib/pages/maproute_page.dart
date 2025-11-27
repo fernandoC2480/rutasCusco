@@ -32,10 +32,11 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
-    _loadBusRoute();
-    _getCurrentLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBusRoute();
+      _getCurrentLocation();
+    });
   }
-
   Future<void> _loadBusRoute() async {
     debugPrint("------------------- Iniciando carga de ruta -------------------");
     debugPrint("Polilínea recibida (raw): ${widget.polyline}");
@@ -92,12 +93,6 @@ class _MapPageState extends State<MapPage> {
           ));
 
           _center = routePoints.first;
-          // Anima la cámara DESPUÉS de haber agregado los puntos a _polylines y definido _center.
-          // mapController podría ser nulo aquí, es mejor animar en onMapCreated si los puntos ya están listos.
-          // Si quieres animar aquí, descomenta y asegúrate de que mapController no sea nulo.
-          // Future.delayed(const Duration(milliseconds: 500), () { // Pequeño retraso para asegurar que el mapa está listo
-          //   mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
-          // });
         });
         debugPrint("Polilínea y marcadores añadidos al estado.");
 
