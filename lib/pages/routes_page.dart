@@ -101,11 +101,6 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
     }
 
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Buscar Rutas'),
-        backgroundColor: const Color(0xFF4A148C),
-        foregroundColor: Colors.white,
-      ),
       body: Column(
         children: [
           // 🔹 Barra de búsqueda
