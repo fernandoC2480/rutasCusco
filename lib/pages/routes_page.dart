@@ -36,19 +36,14 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
       for (final path in jsonPaths) {
         final jsonStr = await rootBundle.loadString(path);
         final data = json.decode(jsonStr);
-
-        // --- ¡EL CAMBIO CRÍTICO ESTÁ AQUÍ! ---
-        // Tu JSON tiene la clave 'points', no 'polyline'.
-        // Asegúrate de que 'points' sea una List<dynamic> y la conviertes a JSON String.
-        final List<dynamic> points = data['points'] ?? []; // Usa ?? [] para asegurar que siempre sea una lista, aunque vacía.
+        final List<dynamic> points = data['points'] ?? [];
         final String polylineJsonString = json.encode(points);
-        // --- FIN DEL CAMBIO ---
 
         routes.add({
           'name': data['name'],
           'number': data['number'],
           'schedule': data['schedule'],
-          'polyline': polylineJsonString, // Ahora pasa la cadena JSON correcta
+          'polyline': polylineJsonString,
         });
       }
 
@@ -77,7 +72,6 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
   }
 
   void _openRoute(Map<String, dynamic> route) {
-    // Aquí route['polyline'] ya es una String JSON, no necesitas volver a codificarla.
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -85,7 +79,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
           routeName: route['name'],
           routeNumber: route['number'],
           schedule: route['schedule'],
-          polyline: route['polyline'], // Esto ya es la cadena JSON correcta
+          polyline: route['polyline'],
         ),
       ),
     );
@@ -103,7 +97,6 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
     return Scaffold(
       body: Column(
         children: [
-          // 🔹 Barra de búsqueda
           Padding(
             padding: const EdgeInsets.all(12.0),
             child: TextField(
@@ -124,7 +117,6 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
             ),
           ),
 
-          // 🔹 Lista de resultados o sugerencias
           Expanded(
             child: filteredRoutes.isEmpty
                 ? const Center(
@@ -137,7 +129,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
               itemCount: filteredRoutes.length,
               itemBuilder: (_, i) {
                 final r = filteredRoutes[i];
-                return Card( // Usar Card para un mejor aspecto
+                return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
