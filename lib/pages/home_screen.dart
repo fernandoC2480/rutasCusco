@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
-import 'routes_page.dart'; // 🔹 Ahora contiene RoutesSearchPage
-import 'schedule_page.dart';
+import 'routes_page.dart';
+import 'map_page.dart';
 import 'info_page.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -14,8 +14,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
   final List<Widget> _pages = const [
-    RoutesSearchPage(), // 🔹 Página combinada de búsqueda y rutas
-    SchedulePage(),
+    MapSearchPage(),
+    RoutesSearchPage(),
     InfoPage(),
   ];
 
@@ -34,12 +34,15 @@ class _HomeScreenState extends State<HomeScreen> {
         foregroundColor: Colors.white,
         elevation: 4,
       ),
-      body: _pages[_selectedIndex],
+      body: IndexedStack(
+        index: _selectedIndex,
+        children: _pages,
+      ),
       bottomNavigationBar: BottomNavigationBar(
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.search), label: 'Buscar'),
-          BottomNavigationBarItem(icon: Icon(Icons.schedule), label: 'Horario'),
-          BottomNavigationBarItem(icon: Icon(Icons.info), label: 'Info'),
+          BottomNavigationBarItem(icon: Icon(Icons.map), label: 'Mapa'),
+          BottomNavigationBarItem(icon: Icon(Icons.directions_bus_filled), label: 'Buses'),
+          BottomNavigationBarItem(icon: Icon(Icons.info_outline), label: 'Info'),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: const Color(0xFF4A148C),

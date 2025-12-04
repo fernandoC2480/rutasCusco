@@ -263,7 +263,7 @@ class InfoPage extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'Versión 1.0.0',
+                          'Versión 1.0.1',
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         const SizedBox(height: 6),
@@ -391,7 +391,7 @@ class InfoPage extends StatelessWidget {
           InfoCard(
             icon: Icons.update,
             title: 'Versión',
-            description: 'Versión 1.0.0',
+            description: 'Versión 1.0.1',
             onTap: () => _showVersionDialog(context),
           ),
           const SizedBox(height: 16),
