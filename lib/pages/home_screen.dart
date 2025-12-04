@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'routes_page.dart'; // Pestaña 1: Lista
-import 'map_page.dart';    // Pestaña 2: Mapa Buscador (NUEVO)
-import 'info_page.dart';   // Pestaña 3: Info
+import 'routes_page.dart';
+import 'map_page.dart';
+import 'info_page.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,7 +13,6 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
 
-  // Ahora tenemos 3 páginas en la lista
   final List<Widget> _pages = const [
     MapSearchPage(),
     RoutesSearchPage(),
