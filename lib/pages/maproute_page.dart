@@ -8,6 +8,8 @@ class MapPage extends StatefulWidget {
   final String routeNumber;
   final String schedule;
   final String polyline;
+  final LatLng? targetLocation;
+  final String? targetName;
 
   const MapPage({
     super.key,
@@ -15,6 +17,8 @@ class MapPage extends StatefulWidget {
     required this.routeNumber,
     required this.schedule,
     required this.polyline,
+    this.targetLocation,
+    this.targetName,
   });
 
   @override
@@ -32,40 +36,25 @@ class _MapPageState extends State<MapPage> {
   @override
   void initState() {
     super.initState();
-    _loadBusRoute();
-    _getCurrentLocation();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadBusRoute();
+      _getCurrentLocation();
+    });
   }
 
   Future<void> _loadBusRoute() async {
-    debugPrint("------------------- Iniciando carga de ruta -------------------");
-    debugPrint("Polilínea recibida (raw): ${widget.polyline}");
-
-    if (widget.polyline.isEmpty || widget.polyline == "[]") {
-      debugPrint("Error: La cadena de polilínea está vacía o es un array vacío. No se dibujará la ruta.");
-      // Considera mostrar un mensaje al usuario aquí.
-      return; // Salir si no hay datos de polilínea
-    }
+    if (widget.polyline.isEmpty || widget.polyline == "[]") return;
 
     try {
       final List<dynamic> coords = json.decode(widget.polyline);
-      debugPrint("JSON decodificado: $coords");
-
-      if (coords.isEmpty) {
-        debugPrint("Error: La lista de coordenadas decodificadas está vacía. No se dibujará la ruta.");
-        return;
-      }
+      if (coords.isEmpty) return;
 
       List<LatLng> routePoints = [];
       for (var p in coords) {
         if (p is Map<String, dynamic> && p.containsKey('lat') && p.containsKey('lng')) {
           routePoints.add(LatLng(p['lat'] as double, p['lng'] as double));
-        } else {
-          debugPrint("Advertencia: Punto con formato incorrecto encontrado: $p");
         }
       }
-
-      debugPrint("Puntos de ruta generados (${routePoints.length} puntos): $routePoints");
-
 
       if (routePoints.isNotEmpty) {
         setState(() {
@@ -81,46 +70,35 @@ class _MapPageState extends State<MapPage> {
           _markers.add(Marker(
             markerId: const MarkerId('start'),
             position: routePoints.first,
-            infoWindow: InfoWindow(title: 'Inicio de la ruta ${widget.routeNumber}'),
+            infoWindow: InfoWindow(title: 'Inicio: ${widget.routeNumber}'),
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           ));
           _markers.add(Marker(
             markerId: const MarkerId('end'),
             position: routePoints.last,
-            infoWindow: InfoWindow(title: 'Fin de la ruta ${widget.routeNumber}'),
+            infoWindow: InfoWindow(title: 'Fin: ${widget.routeNumber}'),
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           ));
 
-          _center = routePoints.first;
-          // Anima la cámara DESPUÉS de haber agregado los puntos a _polylines y definido _center.
-          // mapController podría ser nulo aquí, es mejor animar en onMapCreated si los puntos ya están listos.
-          // Si quieres animar aquí, descomenta y asegúrate de que mapController no sea nulo.
-          // Future.delayed(const Duration(milliseconds: 500), () { // Pequeño retraso para asegurar que el mapa está listo
-          //   mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
-          // });
-        });
-        debugPrint("Polilínea y marcadores añadidos al estado.");
+          if (widget.targetLocation != null) {
+            _markers.add(Marker(
+              markerId: const MarkerId('user_target'),
+              position: widget.targetLocation!,
+              infoWindow: InfoWindow(title: widget.targetName ?? 'Mi Destino'),
+              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+            ));
+          }
 
-        // Si mapController ya está disponible (ej. si el mapa se renderiza antes que _loadBusRoute termine)
-        // podríamos animar aquí, pero es más robusto hacerlo en onMapCreated.
+          _center = routePoints.first;
+        });
+
         if (mapController != null) {
           mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
         }
-
-      } else {
-        debugPrint("La lista final de routePoints está vacía, no se añadirán polilíneas ni marcadores.");
       }
-    } catch (e, stacktrace) {
-      debugPrint("¡¡¡ERROR CRÍTICO!!! Fallo al cargar ruta o decodificar JSON: $e");
-      debugPrint("StackTrace: $stacktrace");
-      // Considera mostrar un mensaje de error al usuario.
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error al cargar la ruta: $e')),
-        );
-      }
+    } catch (e) {
+      debugPrint("Error loading route: $e");
     }
-    debugPrint("------------------- Fin carga de ruta -------------------");
   }
 
   Future<void> _getCurrentLocation() async {
@@ -128,36 +106,15 @@ class _MapPageState extends State<MapPage> {
     LocationPermission permission;
 
     serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('El servicio de ubicación está desactivado.')),
-        );
-      }
-      return;
-    }
+    if (!serviceEnabled) return;
 
     permission = await Geolocator.checkPermission();
     if (permission == LocationPermission.denied) {
       permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Los permisos de ubicación fueron denegados.')),
-          );
-        }
-        return;
-      }
+      if (permission == LocationPermission.denied) return;
     }
 
-    if (permission == LocationPermission.deniedForever) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Los permisos están denegados permanentemente. Por favor, habilítalos desde la configuración de la aplicación.')),
-        );
-      }
-      return;
-    }
+    if (permission == LocationPermission.deniedForever) return;
 
     try {
       final position = await Geolocator.getCurrentPosition(
@@ -168,15 +125,8 @@ class _MapPageState extends State<MapPage> {
         _currentPosition = position;
         _center = LatLng(position.latitude, position.longitude);
       });
-
-      mapController?.animateCamera(CameraUpdate.newLatLng(_center));
     } catch (e) {
-      debugPrint("Error al obtener la ubicación actual: $e");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('No se pudo obtener la ubicación actual: $e')),
-        );
-      }
+      debugPrint("Error GPS: $e");
     }
   }
 
@@ -193,22 +143,16 @@ class _MapPageState extends State<MapPage> {
           GoogleMap(
             onMapCreated: (controller) {
               mapController = controller;
-              if (_polylines.isNotEmpty && _polylines.first.points.isNotEmpty) {
-                mapController?.animateCamera(CameraUpdate.newLatLngZoom(_polylines.first.points.first, 13.5));
-              } else {
+              if (_polylines.isNotEmpty) {
                 mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
               }
             },
-            initialCameraPosition: CameraPosition(
-              target: _center,
-              zoom: 13.5,
-            ),
+            initialCameraPosition: CameraPosition(target: _center, zoom: 13.5),
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
             markers: _markers,
             polylines: _polylines,
           ),
-
           Positioned(
             bottom: 120,
             right: 15,
@@ -219,7 +163,6 @@ class _MapPageState extends State<MapPage> {
               child: const Icon(Icons.my_location),
             ),
           ),
-
           Positioned(
             bottom: 20,
             left: 15,
@@ -229,28 +172,23 @@ class _MapPageState extends State<MapPage> {
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.9),
                 borderRadius: BorderRadius.circular(20),
-                boxShadow: const [
-                  BoxShadow(
-                    color: Colors.black26,
-                    blurRadius: 5,
-                    offset: Offset(0, 2),
-                  ),
-                ],
+                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 2))],
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Ruta: ${widget.routeNumber} - ${widget.routeName}',
-                    style: const TextStyle(
-                        fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
-                  ),
+                  Text('Ruta: ${widget.routeNumber} - ${widget.routeName}',
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
                   const SizedBox(height: 4),
-                  Text(
-                    'Horario: ${widget.schedule}',
-                    style: const TextStyle(fontSize: 14, color: Colors.black87),
-                  ),
+                  Text('Horario: ${widget.schedule}',
+                      style: const TextStyle(fontSize: 14, color: Colors.black87)),
+                  if (widget.targetName != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4.0),
+                      child: Text('Destino marcado: ${widget.targetName}',
+                          style: const TextStyle(fontSize: 14, color: Colors.blue, fontWeight: FontWeight.bold)),
+                    ),
                 ],
               ),
             ),
