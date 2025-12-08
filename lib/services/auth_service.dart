@@ -1,21 +1,45 @@
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:google_sign_in/google_sign_in.dart';
+
 class AuthService {
-  // Credenciales locales predefinidas
-  static const String _defaultEmail = "usuario@cusco.com";
-  static const String _defaultPassword = "123456";
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  final GoogleSignIn _googleSignIn = GoogleSignIn();
 
-  // Verificar credenciales
-  bool login(String email, String password) {
-    return email == _defaultEmail && password == _defaultPassword;
-  }
+  // Stream que escucha cambios de estado (Login/Logout)
+  // Indispensable para que el SplashScreen funcione
+  Stream<User?> get userStream => _auth.authStateChanges();
 
-  // Verificar si el usuario está logueado
-  bool isLoggedIn() {
-    // En una implementación real, aquí verificarías un token o sesión
-    return true; // Por simplicidad, siempre devuelve true después del login
+  // Iniciar sesión con Google
+  Future<User?> signInWithGoogle() async {
+    try {
+      // 1. Abrir diálogo de cuentas de Google
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      if (googleUser == null) return null;
+
+      // 2. Obtener tokens
+      final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
+
+      // 3. Crear credencial para Firebase
+      final AuthCredential credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      // 4. Iniciar sesión en Firebase
+      final UserCredential userCredential = await _auth.signInWithCredential(credential);
+      return userCredential.user;
+    } catch (e) {
+      print("ERROR EN GOOGLE SIGN-IN: $e");
+      return null;
+    }
   }
 
   // Cerrar sesión
-  void logout() {
-    // Limpiar cualquier dato de sesión local
+  Future<void> logout() async {
+    await _googleSignIn.signOut();
+    await _auth.signOut();
   }
+
+  // Obtener usuario actual
+  User? get currentUser => _auth.currentUser;
 }
