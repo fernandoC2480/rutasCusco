@@ -1,29 +1,35 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:provider/provider.dart';
-import 'firebase_options.dart'; // Generado por FlutterFire CLI
+
+// Configuraciones generadas por Firebase CLI
+import 'firebase_options.dart';
+
+// Servicios y Pantallas de Autenticación
 import 'services/auth_service.dart';
-import 'screens/splash_screen.dart';
+import 'screens/splash_screen.dart'; // O 'pages/splash_screen.dart' según dónde lo guardaste
+
+// Base de Datos y Lógica de Rutas
 import 'data/database_helper.dart';
 import 'data/json_loader.dart';
 import 'pages/home_screen.dart';
+import 'pages/maproute_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
-  // Inicialización de Firebase con SHA-1 ya configurado
+
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  
-  // Lógica de base de datos local
+
   final dbh = DatabaseHelper();
   final existing = await dbh.getAllRoutes();
+
   if (existing.isEmpty) {
     final loader = JsonLoader();
     await loader.importAllFromJson([
       'assets/json/ruta_1.json',
-      'assets/json/ruta_patron_de_san_jeronimo.json',
+      'assets/json/rtu_01v.json',
     ]);
   }
 
@@ -37,7 +43,6 @@ class MyApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Inyectamos el AuthService corregido
         Provider<AuthService>(
           create: (_) => AuthService(),
         ),
@@ -48,11 +53,18 @@ class MyApp extends StatelessWidget {
         theme: ThemeData(
           primaryColor: const Color(0xFF4A148C),
           colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF4A148C)),
+          useMaterial3: true,
         ),
-        // La puerta de entrada es siempre el SplashScreen
+
         home: const SplashScreen(),
         routes: {
           '/home': (context) => const HomeScreen(),
+          '/map': (context) => const MapPage(
+            routeName: '',
+            routeNumber: '',
+            schedule: '',
+            polyline: '[]',
+          ),
         },
       ),
     );
