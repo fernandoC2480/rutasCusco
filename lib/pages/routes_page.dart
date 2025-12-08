@@ -12,59 +12,72 @@ class RoutesSearchPage extends StatefulWidget {
 
 class _RoutesSearchPageState extends State<RoutesSearchPage> {
   final TextEditingController _searchController = TextEditingController();
-  List<Map<String, dynamic>> allRoutes = [];
+
+  // Listas para manejar los datos agrupados
+  List<Map<String, dynamic>> groupedRoutes = [];
   List<Map<String, dynamic>> filteredRoutes = [];
   bool _isLoading = true;
 
   @override
   void initState() {
     super.initState();
-    _loadRoutesFromJson();
+    _loadRoutesAndGroup();
   }
 
-  Future<void> _loadRoutesFromJson() async {
+  Future<void> _loadRoutesAndGroup() async {
     try {
+      // 1. Cargar manifiesto
       final manifestContent = await rootBundle.loadString('AssetManifest.json');
       final Map<String, dynamic> manifestMap = json.decode(manifestContent);
-
       final jsonPaths = manifestMap.keys
           .where((path) => path.startsWith('assets/json/') && path.endsWith('.json'))
           .toList();
 
-      List<Map<String, dynamic>> routes = [];
+      // 2. Mapa temporal para agrupar por NÚMERO
+      Map<String, Map<String, dynamic>> tempGrouped = {};
 
       for (final path in jsonPaths) {
         final jsonStr = await rootBundle.loadString(path);
         final data = json.decode(jsonStr);
-        final List<dynamic> points = data['points'] ?? [];
-        final String polylineJsonString = json.encode(points);
 
-        routes.add({
-          'name': data['name'],
-          'number': data['number'],
-          'schedule': data['schedule'],
-          'polyline': polylineJsonString,
-        });
+        String number = data['number'] ?? 'Sin Numero';
+        String name = data['name'] ?? 'Sin Nombre';
+        String schedule = data['schedule'] ?? '';
+        List<dynamic> points = data['points'] ?? [];
+        String polylineString = json.encode(points);
+
+        if (tempGrouped.containsKey(number)) {
+          // Si ya existe el número, añadimos la polilínea (la vuelta)
+          (tempGrouped[number]!['polylines'] as List<String>).add(polylineString);
+        } else {
+          // Si es nuevo, creamos el grupo
+          tempGrouped[number] = {
+            'number': number,
+            'name': name, // Usamos el nombre del primer JSON encontrado
+            'schedule': schedule,
+            'polylines': [polylineString], // Lista de polilíneas
+          };
+        }
       }
 
+      List<Map<String, dynamic>> finalRoutesList = tempGrouped.values.toList();
+
       setState(() {
-        allRoutes = routes;
-        filteredRoutes = routes;
+        groupedRoutes = finalRoutesList;
+        filteredRoutes = finalRoutesList;
         _isLoading = false;
       });
-      debugPrint('Rutas cargadas desde JSON: ${allRoutes.length}');
-    } catch (e, stacktrace) {
-      debugPrint('Error cargando rutas desde JSON: $e');
-      debugPrint('StackTrace: $stacktrace');
+    } catch (e) {
+      debugPrint('Error cargando rutas: $e');
       setState(() => _isLoading = false);
     }
   }
 
   void _filterRoutes(String query) {
     setState(() {
-      filteredRoutes = allRoutes.where((route) {
-        final name = route['name'].toLowerCase();
-        final number = route['number'].toLowerCase();
+      filteredRoutes = groupedRoutes.where((route) {
+        final name = route['name'].toString().toLowerCase();
+        final number = route['number'].toString().toLowerCase();
         final search = query.toLowerCase();
         return name.contains(search) || number.contains(search);
       }).toList();
@@ -79,7 +92,12 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
           routeName: route['name'],
           routeNumber: route['number'],
           schedule: route['schedule'],
-          polyline: route['polyline'],
+
+          // Enviamos una cadena vacía al parámetro obligatorio 'polyline' para cumplir con main.dart
+          polyline: '',
+
+          // Enviamos la lista real de rutas al parámetro opcional
+          polylinesList: route['polylines'],
         ),
       ),
     );
@@ -103,12 +121,11 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
               controller: _searchController,
               onChanged: _filterRoutes,
               decoration: InputDecoration(
-                hintText: 'Buscar por nombre o número de ruta...',
+                hintText: 'Buscar ruta...',
                 prefixIcon: const Icon(Icons.search, color: Color(0xFF4A148C)),
                 filled: true,
                 fillColor: Colors.white,
-                contentPadding:
-                const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
+                contentPadding: const EdgeInsets.symmetric(vertical: 15, horizontal: 20),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(30),
                   borderSide: const BorderSide(color: Color(0xFF4A148C)),
@@ -119,24 +136,31 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
 
           Expanded(
             child: filteredRoutes.isEmpty
-                ? const Center(
-              child: Text(
-                'No se encontraron rutas.',
-                style: TextStyle(fontSize: 16, color: Colors.grey),
-              ),
-            )
+                ? const Center(child: Text('No se encontraron rutas.', style: TextStyle(fontSize: 16, color: Colors.grey)))
                 : ListView.builder(
               itemCount: filteredRoutes.length,
               itemBuilder: (_, i) {
                 final r = filteredRoutes[i];
+                final int tramos = (r['polylines'] as List).length;
+
                 return Card(
                   margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   elevation: 2,
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                   child: ListTile(
-                    leading: const Icon(Icons.directions_bus, color: Color(0xFF4A148C)),
-                    title: Text('${r['number']} - ${r['name']}', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text('Horario: ${r['schedule']}'),
+                    leading: CircleAvatar(
+                      backgroundColor: const Color(0xFF4A148C),
+                      child: const Icon(Icons.directions_bus, color: Colors.white),
+                    ),
+                    // Mostramos el Nombre del Bus (ej. "San Jeronimo")
+                    title: Text(
+                        r['name'],
+                        style: const TextStyle(fontWeight: FontWeight.bold)
+                    ),
+                    // Mostramos el Número como subtítulo
+                    subtitle: Text(
+                        "${r['number']} • ${tramos > 1 ? 'Ida y Vuelta' : 'Un sentido'}"
+                    ),
                     trailing: const Icon(Icons.arrow_forward_ios, size: 18, color: Colors.grey),
                     onTap: () => _openRoute(r),
                   ),
