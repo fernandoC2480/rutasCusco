@@ -7,18 +7,20 @@ class MapPage extends StatefulWidget {
   final String routeName;
   final String routeNumber;
   final String schedule;
+
+  // Mantenemos este para que main.dart NO de error
   final String polyline;
-  final LatLng? targetLocation;
-  final String? targetName;
+
+  // Agregamos este opcional para recibir Ida y Vuelta
+  final List<String>? polylinesList;
 
   const MapPage({
     super.key,
     required this.routeName,
     required this.routeNumber,
     required this.schedule,
-    required this.polyline,
-    this.targetLocation,
-    this.targetName,
+    required this.polyline, // Requerido por main.dart
+    this.polylinesList,     // Opcional para la nueva lógica
   });
 
   @override
@@ -28,110 +30,98 @@ class MapPage extends StatefulWidget {
 class _MapPageState extends State<MapPage> {
   GoogleMapController? mapController;
   LatLng _center = const LatLng(-13.53195, -71.967463);
-  Position? _currentPosition;
-
   final Set<Polyline> _polylines = {};
   final Set<Marker> _markers = {};
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _loadBusRoute();
-      _getCurrentLocation();
-    });
+    _loadBusRoutes();
   }
 
-  Future<void> _loadBusRoute() async {
-    if (widget.polyline.isEmpty || widget.polyline == "[]") return;
+  void _loadBusRoutes() {
+    // 1. Determinamos qué fuente de datos usar
+    List<String> routesToDraw = [];
 
-    try {
-      final List<dynamic> coords = json.decode(widget.polyline);
-      if (coords.isEmpty) return;
+    if (widget.polylinesList != null && widget.polylinesList!.isNotEmpty) {
+      // Si venimos de la lista agrupada (Ida/Vuelta)
+      routesToDraw = widget.polylinesList!;
+    } else if (widget.polyline.isNotEmpty && widget.polyline != "[]") {
+      // Si venimos de una llamada simple (compatibilidad)
+      routesToDraw = [widget.polyline];
+    } else {
+      return; // Nada que dibujar
+    }
 
-      List<LatLng> routePoints = [];
-      for (var p in coords) {
-        if (p is Map<String, dynamic> && p.containsKey('lat') && p.containsKey('lng')) {
-          routePoints.add(LatLng(p['lat'] as double, p['lng'] as double));
+    Set<Polyline> newPolylines = {};
+    Set<Marker> newMarkers = {};
+    LatLng? firstPoint;
+
+    // Colores: Morado (Ida), Turquesa (Vuelta)
+    List<Color> colors = [Colors.purple, Colors.teal];
+
+    for (int i = 0; i < routesToDraw.length; i++) {
+      String polylineStr = routesToDraw[i];
+
+      try {
+        final List<dynamic> coords = json.decode(polylineStr);
+        List<LatLng> routePoints = [];
+        for (var p in coords) {
+          if (p['lat'] != null && p['lng'] != null) {
+            routePoints.add(LatLng(p['lat'], p['lng']));
+          }
         }
-      }
 
-      if (routePoints.isNotEmpty) {
-        setState(() {
-          _polylines.add(
-            Polyline(
-              polylineId: const PolylineId('busRoute'),
-              points: routePoints,
-              color: Colors.purple,
-              width: 6,
-            ),
-          );
+        if (routePoints.isNotEmpty) {
+          Color routeColor = colors[i % colors.length];
+          String label = (routesToDraw.length > 1)
+              ? (i == 0 ? "Ida" : "Vuelta")
+              : "";
 
-          _markers.add(Marker(
-            markerId: const MarkerId('start'),
+          // Polilínea
+          newPolylines.add(Polyline(
+            polylineId: PolylineId('route_$i'),
+            points: routePoints,
+            color: routeColor,
+            width: 5,
+            jointType: JointType.round,
+          ));
+
+          // Marcadores
+          newMarkers.add(Marker(
+            markerId: MarkerId('start_$i'),
             position: routePoints.first,
-            infoWindow: InfoWindow(title: 'Inicio: ${widget.routeNumber}'),
+            infoWindow: InfoWindow(title: 'Inicio $label'),
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           ));
-          _markers.add(Marker(
-            markerId: const MarkerId('end'),
+
+          newMarkers.add(Marker(
+            markerId: MarkerId('end_$i'),
             position: routePoints.last,
-            infoWindow: InfoWindow(title: 'Fin: ${widget.routeNumber}'),
+            infoWindow: InfoWindow(title: 'Fin $label'),
             icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
           ));
 
-          if (widget.targetLocation != null) {
-            _markers.add(Marker(
-              markerId: const MarkerId('user_target'),
-              position: widget.targetLocation!,
-              infoWindow: InfoWindow(title: widget.targetName ?? 'Mi Destino'),
-              icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
-            ));
-          }
-
-          _center = routePoints.first;
-        });
-
-        if (mapController != null) {
-          mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
+          if (i == 0) firstPoint = routePoints.first;
         }
+      } catch (e) {
+        debugPrint("Error decodificando ruta: $e");
       }
-    } catch (e) {
-      debugPrint("Error loading route: $e");
-    }
-  }
-
-  Future<void> _getCurrentLocation() async {
-    bool serviceEnabled;
-    LocationPermission permission;
-
-    serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return;
     }
 
-    if (permission == LocationPermission.deniedForever) return;
-
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-
-      setState(() {
-        _currentPosition = position;
-        _center = LatLng(position.latitude, position.longitude);
-      });
-    } catch (e) {
-      debugPrint("Error GPS: $e");
-    }
+    setState(() {
+      _polylines.addAll(newPolylines);
+      _markers.addAll(newMarkers);
+      if (firstPoint != null) {
+        _center = firstPoint;
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
+    bool showLegend = (widget.polylinesList != null && widget.polylinesList!.length > 1);
+
     return Scaffold(
       appBar: AppBar(
         title: Text('${widget.routeNumber} - ${widget.routeName}'),
@@ -141,58 +131,55 @@ class _MapPageState extends State<MapPage> {
       body: Stack(
         children: [
           GoogleMap(
-            onMapCreated: (controller) {
-              mapController = controller;
-              if (_polylines.isNotEmpty) {
-                mapController?.animateCamera(CameraUpdate.newLatLngZoom(_center, 13.5));
-              }
-            },
-            initialCameraPosition: CameraPosition(target: _center, zoom: 13.5),
-            myLocationEnabled: true,
-            myLocationButtonEnabled: false,
-            markers: _markers,
+            initialCameraPosition: CameraPosition(target: _center, zoom: 13.0),
+            onMapCreated: (ctrl) => mapController = ctrl,
             polylines: _polylines,
+            markers: _markers,
+            myLocationEnabled: true,
+            zoomControlsEnabled: true,
           ),
-          Positioned(
-            bottom: 120,
-            right: 15,
-            child: FloatingActionButton(
-              onPressed: _getCurrentLocation,
-              backgroundColor: const Color(0xFF4A148C),
-              foregroundColor: Colors.white,
-              child: const Icon(Icons.my_location),
+
+          // Leyenda (Solo si hay Ida y Vuelta)
+          if (showLegend)
+            Positioned(
+              top: 10, right: 10,
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.9),
+                    borderRadius: BorderRadius.circular(8),
+                    boxShadow: const [BoxShadow(blurRadius: 3, color: Colors.black26)]
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: const [
+                    Text("Leyenda", style: TextStyle(fontWeight: FontWeight.bold)),
+                    SizedBox(height: 5),
+                    Row(children: [Icon(Icons.horizontal_rule, color: Colors.purple), SizedBox(width: 5), Text("Ida")]),
+                    Row(children: [Icon(Icons.horizontal_rule, color: Colors.teal), SizedBox(width: 5), Text("Vuelta")]),
+                  ],
+                ),
+              ),
             ),
-          ),
+
           Positioned(
-            bottom: 20,
-            left: 15,
-            right: 15,
+            bottom: 20, left: 15, right: 15,
             child: Container(
               padding: const EdgeInsets.all(15),
               decoration: BoxDecoration(
-                color: Colors.white.withOpacity(0.9),
-                borderRadius: BorderRadius.circular(20),
-                boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 5, offset: Offset(0, 2))],
+                  color: Colors.white.withOpacity(0.9),
+                  borderRadius: BorderRadius.circular(15)
               ),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Ruta: ${widget.routeNumber} - ${widget.routeName}',
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-                  const SizedBox(height: 4),
-                  Text('Horario: ${widget.schedule}',
-                      style: const TextStyle(fontSize: 14, color: Colors.black87)),
-                  if (widget.targetName != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4.0),
-                      child: Text('Destino marcado: ${widget.targetName}',
-                          style: const TextStyle(fontSize: 14, color: Colors.blue, fontWeight: FontWeight.bold)),
-                    ),
+                  Text("Ruta: ${widget.routeName}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                  Text("Horario: ${widget.schedule}"),
                 ],
               ),
             ),
-          ),
+          )
         ],
       ),
     );
