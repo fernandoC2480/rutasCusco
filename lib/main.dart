@@ -28,7 +28,7 @@ Future<void> main() async {
   if (existing.isEmpty) {
     final loader = JsonLoader();
     await loader.importAllFromJson([
-      'assets/json/ruta_1.json',
+      'assets/json/rtu_01i.json',
       'assets/json/rtu_01v.json',
     ]);
   }
