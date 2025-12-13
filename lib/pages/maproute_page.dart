@@ -7,11 +7,7 @@ class MapPage extends StatefulWidget {
   final String routeName;
   final String routeNumber;
   final String schedule;
-
-  // Mantenemos este para que main.dart NO de error
   final String polyline;
-
-  // Agregamos este opcional para recibir Ida y Vuelta
   final List<String>? polylinesList;
 
   const MapPage({
@@ -19,8 +15,8 @@ class MapPage extends StatefulWidget {
     required this.routeName,
     required this.routeNumber,
     required this.schedule,
-    required this.polyline, // Requerido por main.dart
-    this.polylinesList,     // Opcional para la nueva lógica
+    required this.polyline,
+    this.polylinesList,
   });
 
   @override
@@ -44,20 +40,16 @@ class _MapPageState extends State<MapPage> {
     List<String> routesToDraw = [];
 
     if (widget.polylinesList != null && widget.polylinesList!.isNotEmpty) {
-      // Si venimos de la lista agrupada (Ida/Vuelta)
       routesToDraw = widget.polylinesList!;
     } else if (widget.polyline.isNotEmpty && widget.polyline != "[]") {
-      // Si venimos de una llamada simple (compatibilidad)
       routesToDraw = [widget.polyline];
     } else {
-      return; // Nada que dibujar
+      return;
     }
 
     Set<Polyline> newPolylines = {};
     Set<Marker> newMarkers = {};
     LatLng? firstPoint;
-
-    // Colores: Morado (Ida), Turquesa (Vuelta)
     List<Color> colors = [Colors.purple, Colors.teal];
 
     for (int i = 0; i < routesToDraw.length; i++) {
@@ -139,7 +131,6 @@ class _MapPageState extends State<MapPage> {
             zoomControlsEnabled: true,
           ),
 
-          // Leyenda (Solo si hay Ida y Vuelta)
           if (showLegend)
             Positioned(
               top: 10, right: 10,
