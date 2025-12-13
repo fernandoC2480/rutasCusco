@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:http/http.dart' as http;
 
 class TripResultPage extends StatefulWidget {
   final String routeName;
@@ -23,12 +25,10 @@ class _TripResultPageState extends State<TripResultPage> {
   GoogleMapController? mapController;
   final Set<Polyline> _polylines = {};
   final Set<Marker> _markers = {};
+  // Coordenada por defecto (Cusco) por si falla todo
   LatLng _initialCenter = const LatLng(-13.53195, -71.967463);
 
-  // 1. CONTROLADOR PARA LA HOJA DESLIZANTE
   final DraggableScrollableController _sheetController = DraggableScrollableController();
-
-  // Constantes de tamaño para la hoja
   final double _minSheetSize = 0.15;
   final double _maxSheetSize = 0.6;
 
@@ -40,81 +40,114 @@ class _TripResultPageState extends State<TripResultPage> {
 
   @override
   void dispose() {
-    _sheetController.dispose(); // Limpiamos el controlador al salir
+    _sheetController.dispose();
     super.dispose();
   }
 
-  // Lógica para expandir/contraer con doble tap
-  void _toggleSheet() {
-    // Obtenemos el tamaño actual (entre 0.0 y 1.0)
-    double currentSize = _sheetController.size;
+  Future<List<LatLng>> _getStreetRoute(LatLng start, LatLng end) async {
+    try {
+      final url = Uri.parse(
+          'http://router.project-osrm.org/route/v1/foot/${start.longitude},${start.latitude};${end.longitude},${end.latitude}?overview=full&geometries=geojson');
 
-    // Si está más cerca del mínimo, expandimos al máximo
-    if (currentSize < (_maxSheetSize / 2)) {
-      _sheetController.animateTo(
-        _maxSheetSize,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
-    } else {
-      // Si está expandido, lo contraemos al mínimo
-      _sheetController.animateTo(
-        _minSheetSize,
-        duration: const Duration(milliseconds: 300),
-        curve: Curves.easeInOut,
-      );
+      final response = await http.get(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final routes = data['routes'] as List;
+        if (routes.isNotEmpty) {
+          final geometry = routes[0]['geometry'];
+          final coordinates = geometry['coordinates'] as List;
+          return coordinates.map<LatLng>((coord) {
+            return LatLng(coord[1].toDouble(), coord[0].toDouble());
+          }).toList();
+        }
+      }
+    } catch (e) {
+      debugPrint("Error obteniendo ruta peatonal: $e");
     }
+    return [start, end];
   }
 
-  void _processSegments() {
+  Future<void> _processSegments() async {
     Set<Polyline> newPolylines = {};
     Set<Marker> newMarkers = {};
+    LatLng? startUserLocation; // Variable para guardar el inicio real
+
+    if (widget.tripSegments.isEmpty) return;
 
     for (int i = 0; i < widget.tripSegments.length; i++) {
       final segment = widget.tripSegments[i];
-      final List<LatLng> points = List<LatLng>.from(segment['points']);
-      final String type = segment['type'];
+      final String type = segment['type'] ?? 'walk';
       final String id = 'seg_$i';
 
-      Color color = Colors.grey;
-      if (type == 'bus') {
-        color = segment['color'] ?? Colors.purple;
+      List<LatLng> rawPoints = [];
+      try {
+        if (segment['points'] is List<LatLng>) {
+          rawPoints = segment['points'];
+        } else if (segment['points'] is List) {
+          rawPoints = List<LatLng>.from(segment['points']);
+        }
+      } catch (e) {
+        continue;
+      }
+
+      if (rawPoints.isEmpty) continue;
+
+      // 🔹 CAPTURAR UBICACIÓN DE INICIO (Primer punto del primer segmento)
+      if (i == 0) {
+        startUserLocation = rawPoints.first;
+      }
+
+      // LÓGICA DE DIBUJO
+      List<LatLng> pointsToDraw = rawPoints;
+      Color color;
+      List<PatternItem> patterns = [];
+
+      if (type == 'walk') {
+        color = Colors.grey;
+        patterns = [PatternItem.dot, PatternItem.gap(10)];
+        if (rawPoints.length >= 2) {
+          pointsToDraw = await _getStreetRoute(rawPoints.first, rawPoints.last);
+        }
+      } else {
+        color = (segment['color'] is Color) ? segment['color'] : Colors.purple;
+        patterns = [];
       }
 
       newPolylines.add(Polyline(
         polylineId: PolylineId(id),
-        points: points,
+        points: pointsToDraw,
         color: color,
         width: 5,
-        patterns: type == 'walk' ? [PatternItem.dot, PatternItem.gap(10)] : [],
+        patterns: patterns,
         jointType: JointType.round,
         startCap: Cap.roundCap,
         endCap: Cap.roundCap,
       ));
 
-      if (points.isNotEmpty) {
-        if (i == 0) {
-          newMarkers.add(Marker(
-            markerId: const MarkerId('origin'),
-            position: points.first,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
-            infoWindow: const InfoWindow(title: "Tu ubicación"),
-          ));
-        }
-        if (type == 'bus') {
-          newMarkers.add(Marker(
-            markerId: MarkerId('board_$i'),
-            position: points.first,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-            infoWindow: InfoWindow(title: "Subir: ${segment['name']}"),
-          ));
-          newMarkers.add(Marker(
-            markerId: MarkerId('alight_$i'),
-            position: points.last,
-            icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-            infoWindow: InfoWindow(title: "Bajar: ${segment['name']}"),
-          ));
-        }
+      // MARCADORES
+      if (i == 0) {
+        newMarkers.add(Marker(
+          markerId: const MarkerId('origin'),
+          position: rawPoints.first,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueCyan),
+          infoWindow: const InfoWindow(title: "Tu ubicación"),
+        ));
+      }
+
+      if (type == 'bus') {
+        newMarkers.add(Marker(
+          markerId: MarkerId('board_$i'),
+          position: rawPoints.first,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
+          infoWindow: InfoWindow(title: "Subir: ${segment['name'] ?? 'Bus'}"),
+        ));
+        newMarkers.add(Marker(
+          markerId: MarkerId('alight_$i'),
+          position: rawPoints.last,
+          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+          infoWindow: InfoWindow(title: "Bajar: ${segment['name'] ?? 'Bus'}"),
+        ));
       }
     }
 
@@ -127,17 +160,20 @@ class _TripResultPageState extends State<TripResultPage> {
       ));
     }
 
-    if (widget.tripSegments.isNotEmpty) {
-      final firstPoints = List<LatLng>.from(widget.tripSegments[0]['points']);
-      if (firstPoints.isNotEmpty) {
-        _initialCenter = firstPoints.first;
+    if (mounted) {
+      setState(() {
+        _polylines.addAll(newPolylines);
+        _markers.addAll(newMarkers);
+      });
+
+      // 🔹 AQUÍ ESTÁ EL CAMBIO CLAVE:
+      // Una vez que todo está cargado, movemos la cámara explícitamente
+      if (startUserLocation != null && mapController != null) {
+        mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(startUserLocation, 16.5), // Zoom cercano al usuario
+        );
       }
     }
-
-    setState(() {
-      _polylines.addAll(newPolylines);
-      _markers.addAll(newMarkers);
-    });
   }
 
   Widget _buildStepTile(Map<String, dynamic> segment, int index, bool isLast) {
@@ -152,13 +188,13 @@ class _TripResultPageState extends State<TripResultPage> {
       color = Colors.grey;
       if (index == 0) {
         title = "Camina hacia el paradero";
-        subtitle = "Dirígete al punto de partida";
+        subtitle = "Sigue la ruta punteada";
       } else if (isLast) {
         title = "Camina hacia tu destino";
         subtitle = "Estás llegando a ${widget.targetName ?? 'tu destino'}";
       } else {
-        title = "Camina hacia el transbordo";
-        subtitle = "Dirígete al siguiente paradero";
+        title = "Camina hacia el siguiente paradero";
+        subtitle = "Transbordo a pie";
       }
     } else {
       icon = Icons.directions_bus;
@@ -191,20 +227,21 @@ class _TripResultPageState extends State<TripResultPage> {
       ),
       body: Stack(
         children: [
-          // 1. MAPA
           GoogleMap(
+            // La posición inicial es solo un placeholder hasta que _processSegments termine
             initialCameraPosition: CameraPosition(target: _initialCenter, zoom: 15),
             polylines: _polylines,
             markers: _markers,
             myLocationEnabled: true,
             zoomControlsEnabled: false,
-            onMapCreated: (ctrl) => mapController = ctrl,
+            onMapCreated: (ctrl) {
+              mapController = ctrl;
+            },
             padding: const EdgeInsets.only(bottom: 160),
           ),
 
-          // 2. MENÚ DESPLEGABLE
           DraggableScrollableSheet(
-            controller: _sheetController, // Asignamos el controlador
+            controller: _sheetController,
             initialChildSize: 0.25,
             minChildSize: _minSheetSize,
             maxChildSize: _maxSheetSize,
@@ -217,19 +254,16 @@ class _TripResultPageState extends State<TripResultPage> {
                     BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, -2))
                   ],
                 ),
-                child: Column(
-                  children: [
-                    // --- ZONA DE DOBLE TAP (HEADER) ---
-                    GestureDetector(
-                      onDoubleTap: _toggleSheet, // Aquí detectamos el doble tap
-                      child: Container(
-                        color: Colors.transparent, // Necesario para detectar toques en espacios vacíos
-                        width: double.infinity,
-                        child: Column(
-                          children: [
-                            const SizedBox(height: 12),
-                            // Manija gris
-                            Container(
+                child: ListView.builder(
+                  controller: scrollController,
+                  itemCount: widget.tripSegments.length + 2,
+                  itemBuilder: (context, index) {
+                    if (index == 0) {
+                      return Column(
+                        children: [
+                          const SizedBox(height: 12),
+                          Center(
+                            child: Container(
                               width: 40,
                               height: 5,
                               decoration: BoxDecoration(
@@ -237,58 +271,46 @@ class _TripResultPageState extends State<TripResultPage> {
                                 borderRadius: BorderRadius.circular(10),
                               ),
                             ),
-                            const SizedBox(height: 10),
-                            // Título
-                            Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 20.0),
-                              child: Row(
-                                children: [
-                                  const Icon(Icons.timeline, color: Color(0xFF4A148C)),
-                                  const SizedBox(width: 10),
-                                  Text(
-                                    "Pasos para llegar (${widget.tripSegments.length} tramos)",
-                                    style: const TextStyle(
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold,
-                                        color: Color(0xFF4A148C)
-                                    ),
+                          ),
+                          const SizedBox(height: 10),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 20.0),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.timeline, color: Color(0xFF4A148C)),
+                                const SizedBox(width: 10),
+                                Text(
+                                  "Pasos para llegar (${widget.tripSegments.length} tramos)",
+                                  style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Color(0xFF4A148C)
                                   ),
-                                  const Spacer(),
-                                  const Text(
-                                      "(Doble tap)",
-                                      style: TextStyle(fontSize: 10, color: Colors.grey)
-                                  ),
-                                ],
-                              ),
+                                ),
+                                const Spacer(),
+                                const Icon(Icons.keyboard_arrow_up, color: Colors.grey),
+                              ],
                             ),
-                            const Divider(),
-                          ],
-                        ),
-                      ),
-                    ),
-                    // ----------------------------------
+                          ),
+                          const Divider(),
+                        ],
+                      );
+                    }
 
-                    // Lista de instrucciones
-                    Expanded(
-                      child: ListView.builder(
-                        controller: scrollController,
-                        itemCount: widget.tripSegments.length + 1,
-                        itemBuilder: (context, index) {
-                          if (index == widget.tripSegments.length) {
-                            return ListTile(
-                              leading: const Icon(Icons.location_on, color: Colors.red),
-                              title: Text("Llegada a ${widget.targetName ?? 'Destino'}", style: const TextStyle(fontWeight: FontWeight.bold)),
-                              subtitle: const Text("Has completado tu ruta."),
-                            );
-                          }
-                          final segment = widget.tripSegments[index];
-                          final isLastSegment = index == widget.tripSegments.length - 1;
+                    if (index == widget.tripSegments.length + 1) {
+                      return ListTile(
+                        leading: const Icon(Icons.location_on, color: Colors.red),
+                        title: Text("Llegada a ${widget.targetName ?? 'Destino'}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                        subtitle: const Text("Has completado tu ruta."),
+                      );
+                    }
 
-                          return _buildStepTile(segment, index, isLastSegment);
-                        },
-                      ),
-                    ),
-                  ],
+                    final dataIndex = index - 1;
+                    final segment = widget.tripSegments[dataIndex];
+                    final isLastSegment = dataIndex == widget.tripSegments.length - 1;
+
+                    return _buildStepTile(segment, dataIndex, isLastSegment);
+                  },
                 ),
               );
             },

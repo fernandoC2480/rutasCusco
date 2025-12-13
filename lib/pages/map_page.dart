@@ -1,5 +1,8 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import '../services/user_stats_service.dart';
+import '../services/favorites_service.dart'; // Asegúrate de importar esto
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -9,7 +12,14 @@ import 'trip_result_page.dart';
 import 'routes_page.dart';
 
 class MapSearchPage extends StatefulWidget {
-  const MapSearchPage({super.key});
+  final LatLng? initialTarget;
+  final String? initialName;
+
+  const MapSearchPage({
+    super.key,
+    this.initialTarget,
+    this.initialName,
+  });
 
   @override
   State<MapSearchPage> createState() => _MapSearchPageState();
@@ -17,6 +27,7 @@ class MapSearchPage extends StatefulWidget {
 
 class _MapSearchPageState extends State<MapSearchPage> {
   final TextEditingController _searchController = TextEditingController();
+  final FavoritesService _favoritesService = FavoritesService(); // Servicio de favoritos
   GoogleMapController? _mapController;
 
   List<Map<String, dynamic>> allRoutes = [];
@@ -39,6 +50,11 @@ class _MapSearchPageState extends State<MapSearchPage> {
   void initState() {
     super.initState();
     _checkConnectivityAndInit();
+
+    // Listener para sugerencias
+    _searchController.addListener(() {
+      // ... tu lógica de listener si la tenías ...
+    });
   }
 
   Future<void> _checkConnectivityAndInit() async {
@@ -48,12 +64,14 @@ class _MapSearchPageState extends State<MapSearchPage> {
         setState(() => _hasInternet = true);
         await _loadRoutesData();
         await _getUserLocation();
+
+        if (widget.initialTarget != null && mounted) {
+          _updateTargetAndFilter(widget.initialTarget!, widget.initialName ?? "Ubicación");
+          _searchController.text = widget.initialName ?? "";
+        }
       }
     } catch (_) {
-      setState(() {
-        _hasInternet = false;
-        _isLoading = false;
-      });
+      if (mounted) setState(() { _hasInternet = false; _isLoading = false; });
     }
   }
 
@@ -86,14 +104,16 @@ class _MapSearchPageState extends State<MapSearchPage> {
         });
       }
 
-      setState(() {
-        allRoutes = routes;
-        _isLoading = false;
-        _statusMessage = "Selecciona un destino en el mapa";
-      });
+      if (mounted) {
+        setState(() {
+          allRoutes = routes;
+          _isLoading = false;
+          _statusMessage = "Selecciona un destino en el mapa";
+        });
+      }
     } catch (e) {
       debugPrint("Error loading data: $e");
-      setState(() => _isLoading = false);
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -105,10 +125,10 @@ class _MapSearchPageState extends State<MapSearchPage> {
       permission = await Geolocator.requestPermission();
       if (permission == LocationPermission.denied) return;
     }
-    Position position = await Geolocator.getCurrentPosition();
-    setState(() {
-      _userPosition = position;
-    });
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() => _userPosition = position);
+    } catch (_) {}
   }
 
   void _onSearchTextChanged(String text) {
@@ -140,27 +160,76 @@ class _MapSearchPageState extends State<MapSearchPage> {
     setState(() {
       _showResults = true;
       _targetLocation = target;
+      if(!_suggestions.contains(title) && title != "Destino seleccionado" && title != "Ubicación") {
+        _searchController.text = title;
+      }
       _markers = {
         Marker(markerId: const MarkerId('target'), position: target, infoWindow: InfoWindow(title: title), icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed))
       };
       _statusMessage = "Calculando ruta óptima...";
     });
-    _mapController?.animateCamera(CameraUpdate.newLatLng(target));
+
+    if (_mapController != null) {
+      _mapController!.animateCamera(CameraUpdate.newLatLngZoom(target, 15));
+    }
+
     _calculateRoutesLogic(target);
   }
 
-  // --- 🔹 ALGORITMO PRINCIPAL 🔹 ---
+  // --- 🔹 DIÁLOGO DE GUARDAR FAVORITO 🔹 ---
+  void _promptSaveFavorite() {
+    final TextEditingController nameCtrl = TextEditingController();
+    nameCtrl.text = _searchController.text.isNotEmpty ? _searchController.text : "";
+
+    showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Guardar ubicación"),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text("Dale un nombre a este lugar:"),
+              const SizedBox(height: 10),
+              TextField(
+                controller: nameCtrl,
+                decoration: const InputDecoration(labelText: "Nombre (Ej: Casa, Trabajo)", border: OutlineInputBorder()),
+              )
+            ],
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancelar")),
+            ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF4A148C), foregroundColor: Colors.white),
+                onPressed: () {
+                  if (nameCtrl.text.isNotEmpty) {
+                    // Guardar en Firestore
+                    _favoritesService.addFavorite(nameCtrl.text, "Cusco", _targetLocation);
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Ubicación guardada en favoritos")));
+                  }
+                },
+                child: const Text("Guardar")
+            )
+          ],
+        )
+    );
+  }
+
+  // --- ALGORITMO GEOMÉTRICO (TU VERSIÓN QUE FUNCIONA BIEN) ---
   void _calculateRoutesLogic(LatLng target) {
     if (_userPosition == null) {
-      _getUserLocation();
+      _getUserLocation().then((_) {
+        if(_userPosition != null) _calculateRoutesLogic(target);
+      });
       return;
     }
-    LatLng userLatLng = LatLng(_userPosition!.latitude, _userPosition!.longitude);
+    if (allRoutes.isEmpty) return;
 
+    LatLng userLatLng = LatLng(_userPosition!.latitude, _userPosition!.longitude);
     List<Map<String, dynamic>> results = [];
     const double maxWalkDist = 600;
 
-    // 1. BUSCAR RUTAS DIRECTAS
+    // 1. DIRECTAS
     for (var route in allRoutes) {
       List<LatLng> points = route['points_raw'];
       int startIndex = _findClosestPointIndex(points, userLatLng);
@@ -168,42 +237,41 @@ class _MapSearchPageState extends State<MapSearchPage> {
 
       if (startIndex == -1 || endIndex == -1) continue;
 
-      double distToStart = Geolocator.distanceBetween(userLatLng.latitude, userLatLng.longitude, points[startIndex].latitude, points[startIndex].longitude);
-      double distFromEnd = Geolocator.distanceBetween(points[endIndex].latitude, points[endIndex].longitude, target.latitude, target.longitude);
+      double distToStart = Geolocator.distanceBetween(
+          userLatLng.latitude, userLatLng.longitude,
+          points[startIndex].latitude, points[startIndex].longitude
+      );
+      double distFromEnd = Geolocator.distanceBetween(
+          points[endIndex].latitude, points[endIndex].longitude,
+          target.latitude, target.longitude
+      );
 
       if (distToStart < maxWalkDist && distFromEnd < maxWalkDist && startIndex < endIndex) {
         List<LatLng> busSegmentPoints = points.sublist(startIndex, endIndex + 1);
-
-        // Preparamos los segmentos
-        final segments = [
+        List<Map<String, dynamic>> segments = [
           {'type': 'walk', 'points': [userLatLng, points[startIndex]]},
           {'type': 'bus', 'points': busSegmentPoints, 'name': route['name'], 'color': Colors.purple},
           {'type': 'walk', 'points': [points[endIndex], target]},
         ];
-
-        // Calculamos la distancia total para ordenar luego
         double totalDistance = _calculateTotalDistance(segments);
-
         results.add({
           'type': 'direct',
           'number': route['number'],
           'name': route['name'],
           'schedule': route['schedule'],
-          'total_distance': totalDistance, // Guardamos la distancia
+          'total_distance': totalDistance,
           'segments': segments,
         });
       }
     }
 
     if (results.isNotEmpty) {
-      // 🔹 ORDENAR DIRECTAS POR DISTANCIA (MENOR A MAYOR)
       results.sort((a, b) => (a['total_distance'] as double).compareTo(b['total_distance'] as double));
-
       setState(() => searchResults = results);
       return;
     }
 
-    // 2. BUSCAR TRANSBORDOS
+    // 2. TRANSBORDOS
     setState(() => _statusMessage = "Buscando conexiones...");
 
     var nearUser = allRoutes.where((r) {
@@ -235,13 +303,16 @@ class _MapSearchPageState extends State<MapSearchPage> {
           if (startIdx < xferIdx1 && xferIdx2 < endIdx) {
             List<LatLng> bus1Points = r1['points_raw'].sublist(startIdx, xferIdx1 + 1);
             List<LatLng> bus2Points = r2['points_raw'].sublist(xferIdx2, endIdx + 1);
+            List<LatLng> walkToBus1 = [userLatLng, r1['points_raw'][startIdx]];
+            List<LatLng> walkTransfer = [r1['points_raw'][xferIdx1], r2['points_raw'][xferIdx2]];
+            List<LatLng> walkToDest = [r2['points_raw'][endIdx], target];
 
-            final segments = [
-              {'type': 'walk', 'points': [userLatLng, r1['points_raw'][startIdx]]},
+            List<Map<String, dynamic>> segments = [
+              {'type': 'walk', 'points': walkToBus1},
               {'type': 'bus', 'points': bus1Points, 'name': r1['name'], 'color': Colors.purple},
-              {'type': 'walk', 'points': [r1['points_raw'][xferIdx1], r2['points_raw'][xferIdx2]]},
+              {'type': 'walk', 'points': walkTransfer},
               {'type': 'bus', 'points': bus2Points, 'name': r2['name'], 'color': Colors.blue},
-              {'type': 'walk', 'points': [r2['points_raw'][endIdx], target]},
+              {'type': 'walk', 'points': walkToDest},
             ];
 
             double totalDistance = _calculateTotalDistance(segments);
@@ -253,17 +324,15 @@ class _MapSearchPageState extends State<MapSearchPage> {
               'leg1_name': r1['name'],
               'leg2_name': r2['name'],
               'schedule': r1['schedule'],
-              'total_distance': totalDistance, // Guardamos distancia
+              'total_distance': totalDistance,
               'segments': segments
             });
           }
         }
       }
-      // Quitamos el break temprano para recopilar más opciones y poder ordenarlas mejor
       if (results.length >= 8) break;
     }
 
-    // 🔹 ORDENAR TRANSBORDOS POR DISTANCIA (MENOR A MAYOR)
     results.sort((a, b) => (a['total_distance'] as double).compareTo(b['total_distance'] as double));
 
     setState(() {
@@ -272,11 +341,11 @@ class _MapSearchPageState extends State<MapSearchPage> {
     });
   }
 
-  // --- 🔹 NUEVA FUNCIÓN: CALCULAR DISTANCIA TOTAL DEL VIAJE 🔹 ---
+  // --- HELPERS ---
   double _calculateTotalDistance(List<Map<String, dynamic>> segments) {
     double totalDist = 0;
     for (var segment in segments) {
-      List<LatLng> points = segment['points'];
+      List<LatLng> points = List<LatLng>.from(segment['points']);
       for (int i = 0; i < points.length - 1; i++) {
         totalDist += Geolocator.distanceBetween(
             points[i].latitude, points[i].longitude,
@@ -307,6 +376,7 @@ class _MapSearchPageState extends State<MapSearchPage> {
   }
 
   void _openResult(Map<String, dynamic> result) {
+    UserStatsService().logRouteVisit(result['number'], result['name']);
     Navigator.push(context, MaterialPageRoute(
         builder: (_) => TripResultPage(
           routeName: result['name'],
@@ -336,7 +406,12 @@ class _MapSearchPageState extends State<MapSearchPage> {
         children: [
           GoogleMap(
             initialCameraPosition: CameraPosition(target: _targetLocation, zoom: 14.5),
-            onMapCreated: (ctrl) => _mapController = ctrl,
+            onMapCreated: (ctrl) {
+              _mapController = ctrl;
+              if (widget.initialTarget != null) {
+                _mapController!.moveCamera(CameraUpdate.newLatLngZoom(widget.initialTarget!, 15));
+              }
+            },
             markers: _markers,
             myLocationEnabled: true,
             myLocationButtonEnabled: false,
@@ -352,7 +427,23 @@ class _MapSearchPageState extends State<MapSearchPage> {
                   controller: _searchController,
                   onChanged: _onSearchTextChanged,
                   onSubmitted: _searchLocationFromText,
-                  decoration: InputDecoration(hintText: "Buscar destino", prefixIcon: Icon(Icons.place), border: InputBorder.none, contentPadding: EdgeInsets.all(15))
+                  decoration: InputDecoration(
+                      hintText: "Buscar destino",
+                      prefixIcon: Icon(Icons.place),
+                      // 🔹 BOTÓN PARA GUARDAR FAVORITO
+                      suffixIcon: _showResults
+                          ? IconButton(
+                        icon: const Icon(Icons.favorite_border, color: Colors.red),
+                        tooltip: "Guardar ubicación",
+                        onPressed: _promptSaveFavorite,
+                      )
+                          : IconButton(
+                          icon: const Icon(Icons.search),
+                          onPressed: () => _searchLocationFromText(_searchController.text)
+                      ),
+                      border: InputBorder.none,
+                      contentPadding: EdgeInsets.all(15)
+                  )
               )),
               if (_showSuggestionsList) Container(
                   height: 200, color: Colors.white,
@@ -387,7 +478,6 @@ class _MapSearchPageState extends State<MapSearchPage> {
                           itemBuilder: (ctx, i) {
                             final r = searchResults[i];
                             bool isXfer = r['type'] == 'transfer';
-                            // Convertir distancia a Km para mostrar (Opcional)
                             double distKm = (r['total_distance'] as double) / 1000;
 
                             return Card(
@@ -403,7 +493,6 @@ class _MapSearchPageState extends State<MapSearchPage> {
                                     ] else
                                       Text("Ruta directa"),
 
-                                    // Mostramos la distancia estimada
                                     Text("Distancia total: ${distKm.toStringAsFixed(1)} km", style: TextStyle(fontSize: 12, color: Colors.green)),
                                   ],
                                 ),

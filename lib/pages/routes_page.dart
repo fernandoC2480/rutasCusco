@@ -1,4 +1,5 @@
 import 'dart:convert';
+import '../services/user_stats_service.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'maproute_page.dart';
@@ -47,15 +48,13 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
         String polylineString = json.encode(points);
 
         if (tempGrouped.containsKey(number)) {
-          // Si ya existe el número, añadimos la polilínea (la vuelta)
           (tempGrouped[number]!['polylines'] as List<String>).add(polylineString);
         } else {
-          // Si es nuevo, creamos el grupo
           tempGrouped[number] = {
             'number': number,
-            'name': name, // Usamos el nombre del primer JSON encontrado
+            'name': name,
             'schedule': schedule,
-            'polylines': [polylineString], // Lista de polilíneas
+            'polylines': [polylineString],
           };
         }
       }
@@ -85,6 +84,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
   }
 
   void _openRoute(Map<String, dynamic> route) {
+    UserStatsService().logRouteVisit(route['number'], route['name']);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -92,11 +92,7 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
           routeName: route['name'],
           routeNumber: route['number'],
           schedule: route['schedule'],
-
-          // Enviamos una cadena vacía al parámetro obligatorio 'polyline' para cumplir con main.dart
           polyline: '',
-
-          // Enviamos la lista real de rutas al parámetro opcional
           polylinesList: route['polylines'],
         ),
       ),
@@ -152,12 +148,10 @@ class _RoutesSearchPageState extends State<RoutesSearchPage> {
                       backgroundColor: const Color(0xFF4A148C),
                       child: const Icon(Icons.directions_bus, color: Colors.white),
                     ),
-                    // Mostramos el Nombre del Bus (ej. "San Jeronimo")
                     title: Text(
                         r['name'],
                         style: const TextStyle(fontWeight: FontWeight.bold)
                     ),
-                    // Mostramos el Número como subtítulo
                     subtitle: Text(
                         "${r['number']} • ${tramos > 1 ? 'Ida y Vuelta' : 'Un sentido'}"
                     ),
